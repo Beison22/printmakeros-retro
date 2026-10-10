@@ -71,22 +71,27 @@ function launch(url,core){
   window.EJS_player='#player';window.EJS_core=core;window.EJS_gameUrl=url;
   window.EJS_pathtodata='https://cdn.emulatorjs.org/stable/data/';
   window.EJS_startOnLoaded=true;
-  window.EJS_browserMode='mobile';
-  window.EJS_fullscreenOnLoaded=false;
-  window.EJS_onGameStart=()=>{hideLoading();$('touchHint').hidden=true;loading=false;schedulePlayerRefresh();};
+  // Prueba de ajuste automático al completar la carga de EmulatorJS.
+  window.EJS_onLoad = function () {
+    const player = document.getElementById('player');
+    if (!player) return;
+    requestAnimationFrame(() => {
+      player.style.height = 'calc(100dvh - 1px)';
+      requestAnimationFrame(() => {
+        player.style.height = '100dvh';
+        window.dispatchEvent(new Event('resize'));
+      });
+    });
+  };
+  window.EJS_onGameStart=()=>{hideLoading();loading=false;schedulePlayerRefresh();};
   const script=document.createElement('script');
   script.src='https://cdn.emulatorjs.org/stable/data/loader.js';
   script.onerror=()=>showSetup('No se pudo descargar EmulatorJS. Revisa tu conexión.');
   $('player').append(script);
   schedulePlayerRefresh();
   script.addEventListener('load',schedulePlayerRefresh,{once:true});
-  // No cubrir indefinidamente los controles. Si el navegador exige un gesto, mostrar una acción clara.
-  setTimeout(()=>{
-    if(document.body.classList.contains('playing') && loading){
-      hideLoading();
-      $('touchHint').hidden=false;
-    }
-  },6500);
+  // EmulatorJS puede omitir el callback en algunas versiones: evitar un velo permanente.
+  setTimeout(()=>{if(document.body.classList.contains('playing'))hideLoading()},9000);
 }
 $('start').onclick=async()=>{try{const game=await get(gameId());if(!game){status('Primero guarda un juego en este navegador.');return}if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(new Blob([game.bytes]));launch(objectUrl,game.type)}catch(e){status('Error: '+e.message)}};
 async function remoteStart(){
@@ -109,7 +114,6 @@ $('testR2').onclick=async()=>{
   status('Comprobando conexión con Cloudflare…');
   try{const response=await fetch(BASE+'Assets01/prueba2.txt',{cache:'no-store'});if(!response.ok)throw new Error('HTTP '+response.status);const content=await response.text();if(!content.trim())throw new Error('El TXT está vacío');status('✓ Conexión Cloudflare R2 verificada.')}catch(e){status('Error al comprobar Cloudflare: '+e.message)}
 };
-$('touchHint').onclick=()=>{ $('touchHint').hidden=true; refreshPlayerSize(); };
 $('back').onclick=()=>location.reload();
 $('fullscreen').onclick=async()=>{try{if(!document.fullscreenElement){await document.documentElement.requestFullscreen()}else{await document.exitFullscreen()}}catch(e){alert('Tu navegador no permite pantalla completa automática. Puedes usar Añadir a pantalla de inicio.')}};
 $('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('url').textContent);status('✓ Enlace copiado.')}catch(e){status('Copia el enlace mostrado arriba.')}};
