@@ -6,6 +6,18 @@ const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const gameId = params.get('id') || 'gba001';
 let emulator, timer, started = false;
+let ticks = 0, bootStart = 0;
+function emuState(){
+ if(!emulator) return 'motor no creado';
+ const e=emulator;
+ const st=e.emulatorStatus|0;
+ const statusLabel=({1:'esperando guardado',5:'ejecutando',16:'pausado/sin iniciar',17:'pausado con núcleo cargado',21:'pausado con núcleo listo'})[st] || 'estado '+st;
+ const cycles=e.clockCyclesSinceStart ?? 0;
+ const scan=e.IOCore?.gfxState?.currentScanLine ?? '—';
+ return `estado ${st} (${statusLabel}) · ciclos ${cycles} · ticks ${ticks} · línea ${scan} · cuadros ${frames}`;
+}
+window.PrintMakerDiagnostico=()=>({state:emuState(), status:emulator?.emulatorStatus, frames,ticks,cycles:emulator?.clockCyclesSinceStart, core:!!emulator?.IOCore});
+
 function message(value, retry=false){$('overlay').hidden=false;$('message').textContent=value;$('retry').hidden=!retry;}
 const canvas = $('gba');
 const ctx = canvas.getContext('2d', {alpha:false});
@@ -22,7 +34,7 @@ const graphicsSink = {
   }
 };
 async function boot(){
-  clearInterval(timer); frames=0; started=false; if(emulator)emulator.pause();
+  clearInterval(timer); frames=0; ticks=0; bootStart=performance.now(); started=false; if(emulator)emulator.pause();
   const path=GAMES[gameId];
   if(!path){message('Cartucho no configurado: '+gameId,true);return;}
   if(typeof window.GameBoyAdvanceEmulator!=='function'){
@@ -42,7 +54,7 @@ async function boot(){
     emulator.settings.offthreadGfxEnabled=false;
     emulator.attachGraphicsFrameHandler(graphicsSink);
     emulator.attachPlayStatusHandler(()=>{});
-    emulator.attachSaveExportHandler(()=>{});
+    // No activamos funciones de guardado hasta tener implementacion real.
     // No registrar importador de guardados hasta implementarlo: un callback vacío
     // deja el estado del emulador en 1 (esperando guardado) indefinidamente.
     // Sin importador, IodineGBA pasa directamente a estado 5 (listo para ejecutar).
@@ -50,8 +62,14 @@ async function boot(){
     emulator.attachROM(rom);
     emulator.play();
     console.info('[PrintMaker Retro] IodineGBA estado tras iniciar:', emulator.emulatorStatus);
-    timer=setInterval(()=>{try{emulator.timerCallback(performance.now());}catch(e){clearInterval(timer);console.error(e);message("Error del motor: "+e.message,true)}},16);
-    setTimeout(()=>{if(!frames)message('El motor se cargó, pero aún no ha dibujado imagen. Comprueba compatibilidad del motor/BIOS.',true)},12000);
+    $('message').textContent='Iniciando GBA… '+emuState();
+    timer=setInterval(()=>{try{ticks++;emulator.timerCallback(performance.now());}catch(e){clearInterval(timer);console.error(e);message("Error del motor: "+e.message,true)}},16);
+    const diagnostic=setInterval(()=>{
+      if(frames>0){clearInterval(diagnostic);return;}
+      const age=Math.floor((performance.now()-bootStart)/1000);
+      message('Diagnóstico ('+age+' s): '+emuState(),age>=10);
+      if(age>=25)clearInterval(diagnostic);
+    },1000);
   }catch(error){console.error(error);message('No se pudo iniciar: '+error.message,true)}
 }
 $('retry').addEventListener('click',boot);
