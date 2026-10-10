@@ -23,7 +23,9 @@ for (const [prefix,label] of [['gba','Game Boy Advance'],['snes','Super Nintendo
     idSelect.append(option);
   }
 }
-const requested = new URLSearchParams(location.search).get('id');
+const params = new URLSearchParams(location.search);
+const requested = params.get('id');
+const configMode = params.get('config') === '1';
 if(requested && [...idSelect.options].some(o=>o.value===requested)) idSelect.value=requested;
 const gameId=()=>idSelect.value;
 function status(message){$('status').textContent=message}
@@ -86,4 +88,10 @@ $('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('url').tex
 window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();deferredInstall=event;$('install').hidden=false});
 $('install').onclick=async()=>{if(deferredInstall){deferredInstall.prompt();deferredInstall=null;$('install').hidden=true}};
 // Solo arrancamos automáticamente si hay un identificador válido y una ROM asignada.
-if(requested===gameId() && GAMES[requested])remoteStart();
+// Inicio directo: el cliente no necesita tocar botones.
+// Para administración: abre ?config=1 (o ?id=gba001&config=1).
+if (!configMode && GAMES[gameId()]) {
+  document.documentElement.classList.add('auto-launch');
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', remoteStart, {once:true});
+  else remoteStart();
+}
