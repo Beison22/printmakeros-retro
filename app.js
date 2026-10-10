@@ -6,6 +6,7 @@ const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const gameId = params.get('id') || 'gba001';
 let emulator, timer, started = false;
+let audioContext=null, audioNode=null, audioSink=null, rafId=0, lastFrameTime=0;
 let ticks = 0, bootStart = 0;
 function emuState(){
  if(!emulator) return 'motor no creado';
@@ -34,7 +35,8 @@ const graphicsSink = {
   }
 };
 async function boot(){
-  clearInterval(timer); frames=0; ticks=0; bootStart=performance.now(); started=false; if(emulator)emulator.pause();
+  cancelAnimationFrame(rafId); clearInterval(timer); frames=0; ticks=0; bootStart=performance.now(); started=false; if(emulator)emulator.pause();
+  if(audioSink) audioSink.reset();
   const path=GAMES[gameId];
   if(!path){message('Cartucho no configurado: '+gameId,true);return;}
   if(typeof window.GameBoyAdvanceEmulator!=='function'){
@@ -53,6 +55,7 @@ async function boot(){
     emulator=new GameBoyAdvanceEmulator();
     emulator.settings.offthreadGfxEnabled=false;
     emulator.attachGraphicsFrameHandler(graphicsSink);
+    if(audioSink) emulator.attachAudioHandler(audioSink);
     emulator.attachPlayStatusHandler(()=>{});
     // No activamos funciones de guardado hasta tener implementacion real.
     // No registrar importador de guardados hasta implementarlo: un callback vacío
@@ -63,7 +66,19 @@ async function boot(){
     emulator.play();
     console.info('[PrintMaker Retro] IodineGBA estado tras iniciar:', emulator.emulatorStatus);
     $('message').textContent='Iniciando GBA… '+emuState();
-    timer=setInterval(()=>{try{ticks++;emulator.timerCallback(performance.now());}catch(e){clearInterval(timer);console.error(e);message("Error del motor: "+e.message,true)}},16);
+    // Sin acumular intervalos mientras el hilo principal dibuja o recibe pulsaciones.
+    lastFrameTime=0;
+    const cycle=(stamp)=>{
+      try {
+        if (!lastFrameTime || stamp-lastFrameTime >= 15) {
+          lastFrameTime=stamp;
+          ticks++;
+          emulator.timerCallback(stamp);
+        }
+        rafId=requestAnimationFrame(cycle);
+      } catch(e) {cancelAnimationFrame(rafId);console.error(e);message('Error del motor: '+e.message,true);}
+    };
+    rafId=requestAnimationFrame(cycle);
     const diagnostic=setInterval(()=>{
       if(frames>0){clearInterval(diagnostic);return;}
       const age=Math.floor((performance.now()-bootStart)/1000);
@@ -79,5 +94,63 @@ for(const button of document.querySelectorAll('[data-key]')){
   button.addEventListener('pointerdown',event=>{event.preventDefault();button.setPointerCapture(event.pointerId);button.classList.add('pressed');emulator?.keyDown(key)});
   button.addEventListener('pointerup',release);button.addEventListener('pointercancel',release);button.addEventListener('lostpointercapture',release);
 }
-$('sound').addEventListener('click',()=>{$('sound').textContent='Audio no disponible en esta prueba';});
+// WebAudio: salida estéreo para el buffer PCM de IodineGBA.
+// La activación inicial requiere un gesto del usuario por las reglas del navegador.
+function createAudioSink(context) {
+  let samples=new Float32Array(131072), read=0, write=0, count=0;
+  let enabled=false;
+  const capacity=samples.length;
+  function enqueue(v){
+    if(count>=capacity){read=(read+1)%capacity;count--;}
+    samples[write]=v; write=(write+1)%capacity;count++;
+  }
+  const sink={
+    initialize(channels,sampleRate,bufferLimit) {
+      sink.reset();
+    },
+    register(){enabled=true;},
+    unregister(){enabled=false; sink.reset();},
+    setBufferSpace(){},
+    remainingBuffer(){return count;},
+    reset(){read=0;write=0;count=0;},
+    push(buffer,start,end){for(let i=start;i<end;i++) enqueue(buffer[i]);}
+  };
+  // ScriptProcessor es compatible con los navegadores modernos, aunque legado.
+  // Mantiene baja latencia con buffers de 1024 muestras; AudioWorklet es una mejora futura.
+  const node=context.createScriptProcessor(1024,0,2);
+  node.onaudioprocess=(event)=>{
+    const left=event.outputBuffer.getChannelData(0);
+    const right=event.outputBuffer.getChannelData(1);
+    for(let i=0;i<left.length;i++){
+      if(enabled && count>=2){
+        left[i]=samples[read]; read=(read+1)%capacity;
+        right[i]=samples[read];read=(read+1)%capacity;count-=2;
+      }else {left[i]=0;right[i]=0;}
+    }
+  };
+  node.connect(context.destination);
+  audioNode=node;
+  return sink;
+}
+$('sound').addEventListener('click',async()=>{
+  try{
+    if(!audioContext){
+      audioContext=new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive',sampleRate:44100});
+      audioSink=createAudioSink(audioContext);
+      if(emulator)emulator.attachAudioHandler(audioSink);
+    }
+    if(emulator?.audioFound){
+      emulator.disableAudio();
+      $('sound').textContent='Activar sonido';
+    } else {
+      await audioContext.resume();
+      emulator?.enableAudio();
+      $('sound').textContent='Silenciar sonido';
+    }
+  }catch(error){console.error(error);$('sound').textContent='Error de audio';}
+});
+// Controles de teclado para probar latencia en PC sin depender de pantalla táctil.
+const keyMap={ArrowRight:4,ArrowLeft:5,ArrowUp:6,ArrowDown:7,KeyZ:0,KeyX:1,Enter:3,ShiftRight:2,KeyA:9,KeyS:8};
+window.addEventListener('keydown',e=>{const key=keyMap[e.code];if(key===undefined)return;e.preventDefault();if(!e.repeat)emulator?.keyDown(key)});
+window.addEventListener('keyup',e=>{const key=keyMap[e.code];if(key===undefined)return;e.preventDefault();emulator?.keyUp(key)});
 boot();
