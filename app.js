@@ -57,7 +57,7 @@ async function isAppOfflineReady(){
   if(!('serviceWorker' in navigator))return false;
   const ready=await Promise.race([navigator.serviceWorker.ready,new Promise(resolve=>setTimeout(()=>resolve(null),4500))]);
   if(!ready?.active)return false;
-  const cache=await caches.open('printmaker-gba-v11');
+  const cache=await caches.open('printmaker-gba-v11-1');
   const [index,engine]=await Promise.all([cache.match('./index.html'),cache.match('./IodineGBA/core/Emulator.js')]);
   return !!(index&&engine);
 }
@@ -282,7 +282,7 @@ function flushSave(){
   if(saveDirty.size===0) return saveFlushPromise;
   const batch=[...saveDirty.entries()]; saveDirty.clear();
   saveFlushPromise=saveFlushPromise.catch(()=>{}).then(()=>writeSaveBatch(batch)).then(()=>{
-    if(document.getElementById('saveStatus')) $('saveStatus').textContent='Partida guardada en este dispositivo ✓';
+    if(document.getElementById('saveStatus')) $('saveStatus').textContent='Partida interna sincronizada ✓';
   }).catch(err=>{
     for(const [key,value] of batch) if(!saveDirty.has(key)) saveDirty.set(key,value);
     if(document.getElementById('saveStatus')) $('saveStatus').textContent='No se pudo guardar: '+err.message;
@@ -294,7 +294,19 @@ function flushSave(){
 document.addEventListener('visibilitychange',()=>{if(document.hidden) flushSave().catch(console.error)});
 window.addEventListener('pagehide',()=>{flushSave().catch(console.error)});
 const manualSave=document.getElementById('saveNow');
-if(manualSave) manualSave.addEventListener('click',async()=>{try{await flushSave()}catch(e){console.error(e)}});
+if(manualSave) manualSave.addEventListener('click',async()=>{
+  const status=$('saveStatus');
+  if(status)status.textContent='Comprobando partida…';
+  try {
+    if(!emulator || emulator.emulatorStatus!==5)throw Error('El juego todavía no está ejecutándose.');
+    const cartName=emulator.getGameName?.();
+    await flushSave();
+    const data=cartName ? await readSaveKey(activeCart+':'+cartName) : null;
+    if(status)status.textContent=data?.length
+      ? '✓ Guardado interno respaldado en este dispositivo ('+data.length+' bytes).'
+      : 'Aún no hay partida para respaldar. Primero usa Guardar dentro del menú del juego; luego pulsa este botón.';
+  }catch(e){if(status)status.textContent='No se pudo guardar: '+e.message;console.error(e)}
+});
 // Copia de seguridad portable (.json), evita perder avances al borrar datos del sitio.
 document.getElementById('backup')?.addEventListener('click',async()=>{
   try{
