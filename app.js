@@ -18,24 +18,17 @@ function showPlayer(){
   // Si el contenedor cambia de tamaño, avisamos sin exigir tocar pantalla completa.
   requestAnimationFrame(()=>requestAnimationFrame(refreshPlayerSize));
 }
-// Actualiza el viewport sin depender del botón de pantalla completa.
-let lastViewport = '';
-function refreshPlayerSize(force=false){
+function refreshPlayerSize(){
   const p=$('player');
   if(!p || !document.body.classList.contains('playing')) return;
-  const w=Math.max(1,Math.round(document.documentElement.clientWidth));
-  const h=Math.max(1,Math.round(window.visualViewport?.height || window.innerHeight));
-  const key=w+'x'+h;
-  p.style.width=w+'px';
-  p.style.height=h+'px';
-  $('playArea').style.height=h+'px';
-  if(force || key!==lastViewport){
-    lastViewport=key;
-    window.dispatchEvent(new Event('resize'));
-  }
+  p.style.width='100%';
+  p.style.height='100dvh';
+  window.dispatchEvent(new Event('resize'));
+  // Algunos cores recalculan canvas al recibir resize en su contenedor.
+  p.dispatchEvent(new Event('resize'));
 }
 function schedulePlayerRefresh(){
-  [0,100,350,800,1500,3000,5000,8000].forEach(ms=>setTimeout(()=>refreshPlayerSize(true),ms));
+  [100,350,800,1500,3000,5000,8000].forEach(ms=>setTimeout(refreshPlayerSize,ms));
 }
 
 function showSetup(message=''){document.body.classList.remove('playing');$('playArea').style.display='none';$('setup').style.display='block';hideLoading();loading=false;if(message)status(message);}
@@ -75,20 +68,25 @@ function launch(url,core){
   loading=true;
   showPlayer();showLoading('Preparando el emulador…');
   $('player').replaceChildren();
-  refreshPlayerSize(true);
   window.EJS_player='#player';window.EJS_core=core;window.EJS_gameUrl=url;
   window.EJS_pathtodata='https://cdn.emulatorjs.org/stable/data/';
   window.EJS_startOnLoaded=true;
-  window.EJS_onGameStart=()=>{hideLoading();loading=false;schedulePlayerRefresh();};
+  window.EJS_browserMode='mobile';
+  window.EJS_fullscreenOnLoaded=false;
+  window.EJS_onGameStart=()=>{hideLoading();$('touchHint').hidden=true;loading=false;schedulePlayerRefresh();};
   const script=document.createElement('script');
   script.src='https://cdn.emulatorjs.org/stable/data/loader.js';
   script.onerror=()=>showSetup('No se pudo descargar EmulatorJS. Revisa tu conexión.');
   $('player').append(script);
   schedulePlayerRefresh();
   script.addEventListener('load',schedulePlayerRefresh,{once:true});
-  // No ocultar el indicador por tiempo: podría revelar una pantalla blanca.
-  // Si el core no dispara onGameStart, se deja un acceso a configuración para diagnóstico.
-  setTimeout(()=>{if(loading && document.body.classList.contains('playing')) $('loadingText').textContent='El emulador sigue iniciando…';},15000);
+  // No cubrir indefinidamente los controles. Si el navegador exige un gesto, mostrar una acción clara.
+  setTimeout(()=>{
+    if(document.body.classList.contains('playing') && loading){
+      hideLoading();
+      $('touchHint').hidden=false;
+    }
+  },6500);
 }
 $('start').onclick=async()=>{try{const game=await get(gameId());if(!game){status('Primero guarda un juego en este navegador.');return}if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(new Blob([game.bytes]));launch(objectUrl,game.type)}catch(e){status('Error: '+e.message)}};
 async function remoteStart(){
@@ -111,6 +109,7 @@ $('testR2').onclick=async()=>{
   status('Comprobando conexión con Cloudflare…');
   try{const response=await fetch(BASE+'Assets01/prueba2.txt',{cache:'no-store'});if(!response.ok)throw new Error('HTTP '+response.status);const content=await response.text();if(!content.trim())throw new Error('El TXT está vacío');status('✓ Conexión Cloudflare R2 verificada.')}catch(e){status('Error al comprobar Cloudflare: '+e.message)}
 };
+$('touchHint').onclick=()=>{ $('touchHint').hidden=true; refreshPlayerSize(); };
 $('back').onclick=()=>location.reload();
 $('fullscreen').onclick=async()=>{try{if(!document.fullscreenElement){await document.documentElement.requestFullscreen()}else{await document.exitFullscreen()}}catch(e){alert('Tu navegador no permite pantalla completa automática. Puedes usar Añadir a pantalla de inicio.')}};
 $('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('url').textContent);status('✓ Enlace copiado.')}catch(e){status('Copia el enlace mostrado arriba.')}};
@@ -127,7 +126,5 @@ if (!configMode && GAMES[gameId()]) {
   else remoteStart();
 }
 
-window.addEventListener('orientationchange',()=>setTimeout(()=>refreshPlayerSize(true),350));
-window.addEventListener('fullscreenchange',()=>setTimeout(()=>refreshPlayerSize(true),100));
-window.visualViewport?.addEventListener('resize',()=>refreshPlayerSize());
-window.addEventListener('pageshow',()=>setTimeout(()=>refreshPlayerSize(true),200));
+window.addEventListener('orientationchange',()=>setTimeout(refreshPlayerSize,350));
+window.addEventListener('pageshow',()=>setTimeout(refreshPlayerSize,200));
