@@ -1,134 +1,62 @@
-// PrintMaker OS Retro · Cloudflare R2 · versión de prueba
+'use strict';
+// PrintMaker OS Retro - GBA / IodineGBA. No utiliza EmulatorJS.
+const R2 = 'https://pub-e255b156b86149298448979225186068.r2.dev/';
+const GAMES = {gba001:'Assets01/12.gba'}; // Añade IDs únicamente cuando sepas su ruta.
 const $ = id => document.getElementById(id);
-const BASE = 'https://pub-e255b156b86149298448979225186068.r2.dev/';
-const DB = 'printmaker-retro-v1';
-// Solo asociamos los archivos que hemos comprobado por nombre. Edita esta tabla para agregar más.
-const GAMES = {
-  gba001: {path:'Assets01/12.gba', core:'gba'}
-};
-let deferredInstall = null, objectUrl = null, loading = false;
-const overlay = () => $('loadingOverlay');
-function showLoading(text){ overlay().hidden=false; $('loadingText').textContent=text; }
-function hideLoading(){ overlay().hidden=true; }
-function showPlayer(){
-  document.body.classList.add('playing');
-  $('setup').style.display='none';
-  $('playArea').style.display='block';
-  // EmulatorJS calcula sus dimensiones durante la inicialización.
-  // Si el contenedor cambia de tamaño, avisamos sin exigir tocar pantalla completa.
-  requestAnimationFrame(()=>requestAnimationFrame(refreshPlayerSize));
-}
-function refreshPlayerSize(){
-  const p=$('player');
-  if(!p || !document.body.classList.contains('playing')) return;
-  p.style.width='100%';
-  p.style.height='100dvh';
-  window.dispatchEvent(new Event('resize'));
-  // Algunos cores recalculan canvas al recibir resize en su contenedor.
-  p.dispatchEvent(new Event('resize'));
-}
-function schedulePlayerRefresh(){
-  [100,350,800,1500,3000,5000,8000].forEach(ms=>setTimeout(refreshPlayerSize,ms));
-}
-
-function showSetup(message=''){document.body.classList.remove('playing');$('playArea').style.display='none';$('setup').style.display='block';hideLoading();loading=false;if(message)status(message);}
-
-const idSelect = $('id');
-idSelect.replaceChildren();
-for (const [prefix,label] of [['gba','Game Boy Advance'],['snes','Super Nintendo']]) {
-  for(let n=1;n<=10;n++) {
-    const id = prefix+String(n).padStart(3,'0');
-    const option=document.createElement('option'); option.value=id;
-    option.textContent=label+' · Cartucho '+String(n).padStart(3,'0');
-    idSelect.append(option);
-  }
-}
 const params = new URLSearchParams(location.search);
-const requested = params.get('id');
-const configMode = params.get('config') === '1';
-if(requested && [...idSelect.options].some(o=>o.value===requested)) idSelect.value=requested;
-const gameId=()=>idSelect.value;
-function status(message){$('status').textContent=message}
-function update(){const url=new URL(location.href);url.searchParams.set('id',gameId());$('url').textContent=url.href;history.replaceState(null,'',url)}
-idSelect.addEventListener('change',()=>{update();status('')});
-update();
-function db(){return new Promise((resolve,reject)=>{const req=indexedDB.open(DB,1);req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains('games'))req.result.createObjectStore('games')};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
-async function put(key,value){const d=await db();return new Promise((resolve,reject)=>{const t=d.transaction('games','readwrite');t.objectStore('games').put(value,key);t.oncomplete=()=>{d.close();resolve()};t.onerror=()=>{d.close();reject(t.error)}})}
-async function get(key){const d=await db();return new Promise((resolve,reject)=>{const t=d.transaction('games','readonly');const req=t.objectStore('games').get(key);req.onsuccess=()=>{d.close();resolve(req.result)};req.onerror=()=>{d.close();reject(req.error)}})}
-function typeFromName(name){const ext=name.split('.').pop().toLowerCase();return ({gba:'gba',gbc:'gb',sfc:'snes',smc:'snes'})[ext]||null}
-$('save').onclick=async()=>{
-  const f=$('rom').files[0];if(!f){status('Selecciona una ROM autorizada.');return}
-  const core=typeFromName(f.name);
-  if(!core){status('Formato no compatible. Usa .gba, .gbc, .sfc o .smc.');return}
-  if(f.size<1024){status('El archivo es demasiado pequeño para ser una ROM válida.');return}
-  try{await put(gameId(),{name:f.name,bytes:await f.arrayBuffer(),type:core});status('✓ ROM guardada en este navegador. Pulsa Iniciar juego guardado.')}catch(e){status('Error al guardar: '+e.message)}
+const gameId = params.get('id') || 'gba001';
+let emulator, timer, started = false;
+function message(value, retry=false){$('overlay').hidden=false;$('message').textContent=value;$('retry').hidden=!retry;}
+const canvas = $('gba');
+const ctx = canvas.getContext('2d', {alpha:false});
+const image = ctx.createImageData(240,160);
+let frames=0;
+const graphicsSink = {
+  copyBuffer(rgb) {
+    // IodineGBA entrega RGB: 240 × 160 × 3 bytes (no RGBA).
+    if (!rgb || rgb.length !== 240*160*3) return;
+    const dst=image.data;
+    for(let s=0,d=0;s<rgb.length;s+=3,d+=4){dst[d]=rgb[s];dst[d+1]=rgb[s+1];dst[d+2]=rgb[s+2];dst[d+3]=255;}
+    ctx.putImageData(image,0,0);
+    if (++frames===1) {$('overlay').hidden=true;}
+  }
 };
-function launch(url,core){
-  if(loading)return;
-  loading=true;
-  showPlayer();showLoading('Preparando el emulador…');
-  $('player').replaceChildren();
-  window.EJS_player='#player';window.EJS_core=core;window.EJS_gameUrl=url;
-  window.EJS_pathtodata='https://cdn.emulatorjs.org/stable/data/';
-  window.EJS_startOnLoaded=true;
-  // Prueba de ajuste automático al completar la carga de EmulatorJS.
-  window.EJS_onLoad = function () {
-    const player = document.getElementById('player');
-    if (!player) return;
-    requestAnimationFrame(() => {
-      player.style.height = 'calc(100dvh - 1px)';
-      requestAnimationFrame(() => {
-        player.style.height = '100dvh';
-        window.dispatchEvent(new Event('resize'));
-      });
-    });
-  };
-  window.EJS_onGameStart=()=>{hideLoading();loading=false;schedulePlayerRefresh();};
-  const script=document.createElement('script');
-  script.src='https://cdn.emulatorjs.org/stable/data/loader.js';
-  script.onerror=()=>showSetup('No se pudo descargar EmulatorJS. Revisa tu conexión.');
-  $('player').append(script);
-  schedulePlayerRefresh();
-  script.addEventListener('load',schedulePlayerRefresh,{once:true});
-  // EmulatorJS puede omitir el callback en algunas versiones: evitar un velo permanente.
-  setTimeout(()=>{if(document.body.classList.contains('playing'))hideLoading()},9000);
-}
-$('start').onclick=async()=>{try{const game=await get(gameId());if(!game){status('Primero guarda un juego en este navegador.');return}if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(new Blob([game.bytes]));launch(objectUrl,game.type)}catch(e){status('Error: '+e.message)}};
-async function remoteStart(){
-  const game=GAMES[gameId()];
-  if(!game){status('Este cartucho todavía no tiene un archivo asignado en Cloudflare.');return}
-  status('Comprobando juego remoto…');
-  showLoading('Descargando tu juego…');
+async function boot(){
+  clearInterval(timer); frames=0; started=false; if(emulator)emulator.pause();
+  const path=GAMES[gameId];
+  if(!path){message('Cartucho no configurado: '+gameId,true);return;}
+  if(typeof window.GameBoyAdvanceEmulator!=='function'){
+    message('Falta el motor IodineGBA. Instala sus archivos en vendor/ y revisa LEEME.txt.',true);return;
+  }
+  message('Descargando juego…');
   try{
-    const response=await fetch(BASE+game.path,{method:'GET',mode:'cors',cache:'no-store'});
-    if(!response.ok)throw new Error('HTTP '+response.status);
-    const bytes=await response.arrayBuffer();
-    if(bytes.byteLength<1024)throw new Error('Archivo vacío o demasiado pequeño');
-    if(objectUrl)URL.revokeObjectURL(objectUrl);
-    objectUrl=URL.createObjectURL(new Blob([bytes]));
-    status('✓ Archivo descargado. Iniciando…');loading=false;launch(objectUrl,game.core);
-  }catch(e){showSetup('No se pudo cargar desde Cloudflare: '+e.message+'. Puedes iniciar un juego local guardado.')}
+    const [romRes,biosRes]=await Promise.all([fetch(R2+path),fetch(R2+'System/gba_bios.bin', {mode:'cors'})]);
+    if(!romRes.ok)throw Error('ROM: HTTP '+romRes.status);
+    if(!biosRes.ok)throw Error('BIOS en R2: HTTP '+biosRes.status);
+    const rom=new Uint8Array(await romRes.arrayBuffer());
+    const bios=new Uint8Array(await biosRes.arrayBuffer());
+    if(rom.length<1024)throw Error('La ROM está vacía');
+    if(bios.length!==16384)throw Error('La BIOS GBA debe tener 16 KiB');
+    message('Iniciando emulador…');
+    emulator=new GameBoyAdvanceEmulator();
+    emulator.settings.offthreadGfxEnabled=false;
+    emulator.attachGraphicsFrameHandler(graphicsSink);
+    emulator.attachPlayStatusHandler(()=>{});
+    emulator.attachSaveExportHandler(()=>{});
+    emulator.attachSaveImportHandler(()=>{});
+    emulator.attachBIOS(bios);
+    emulator.attachROM(rom);
+    emulator.play();
+    timer=setInterval(()=>{try{emulator.timerCallback(performance.now());}catch(e){clearInterval(timer);console.error(e);message("Error del motor: "+e.message,true)}},16);
+    setTimeout(()=>{if(!frames)message('El motor se cargó, pero aún no ha dibujado imagen. Comprueba compatibilidad del motor/BIOS.',true)},12000);
+  }catch(error){console.error(error);message('No se pudo iniciar: '+error.message,true)}
 }
-$('remote').onclick=remoteStart;
-$('testR2').onclick=async()=>{
-  status('Comprobando conexión con Cloudflare…');
-  try{const response=await fetch(BASE+'Assets01/prueba2.txt',{cache:'no-store'});if(!response.ok)throw new Error('HTTP '+response.status);const content=await response.text();if(!content.trim())throw new Error('El TXT está vacío');status('✓ Conexión Cloudflare R2 verificada.')}catch(e){status('Error al comprobar Cloudflare: '+e.message)}
-};
-$('back').onclick=()=>location.reload();
-$('fullscreen').onclick=async()=>{try{if(!document.fullscreenElement){await document.documentElement.requestFullscreen()}else{await document.exitFullscreen()}}catch(e){alert('Tu navegador no permite pantalla completa automática. Puedes usar Añadir a pantalla de inicio.')}};
-$('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('url').textContent);status('✓ Enlace copiado.')}catch(e){status('Copia el enlace mostrado arriba.')}};
-// El Service Worker existente puede servir versiones antiguas: no lo registramos aquí.
-// Una vez revisado sw.js, se podrá actualizar para cachear el emulador y sus recursos.
-window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();deferredInstall=event;$('install').hidden=false});
-$('install').onclick=async()=>{if(deferredInstall){deferredInstall.prompt();deferredInstall=null;$('install').hidden=true}};
-// Solo arrancamos automáticamente si hay un identificador válido y una ROM asignada.
-// Inicio directo: el cliente no necesita tocar botones.
-// Para administración: abre ?config=1 (o ?id=gba001&config=1).
-if (!configMode && GAMES[gameId()]) {
-  document.documentElement.classList.add('auto-launch');
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', remoteStart, {once:true});
-  else remoteStart();
+$('retry').addEventListener('click',boot);
+for(const button of document.querySelectorAll('[data-key]')){
+  const key=Number(button.dataset.key);
+  const release=event=>{event.preventDefault();button.classList.remove('pressed');emulator?.keyUp(key)};
+  button.addEventListener('pointerdown',event=>{event.preventDefault();button.setPointerCapture(event.pointerId);button.classList.add('pressed');emulator?.keyDown(key)});
+  button.addEventListener('pointerup',release);button.addEventListener('pointercancel',release);button.addEventListener('lostpointercapture',release);
 }
-
-window.addEventListener('orientationchange',()=>setTimeout(refreshPlayerSize,350));
-window.addEventListener('pageshow',()=>setTimeout(refreshPlayerSize,200));
+$('sound').addEventListener('click',()=>{$('sound').textContent='Audio no disponible en esta prueba';});
+boot();

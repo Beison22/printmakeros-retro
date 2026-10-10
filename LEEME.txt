@@ -1,0 +1,9 @@
+PrintMaker OS Retro GBA — PRUEBA INTEGRADA
+Incluye motor IodineGBA (fuentes JS) bajo licencia MIT (ver LICENCIA_IodineGBA.txt).
+Prueba: sube esta carpeta como repositorio de prueba o rama de prueba en GitHub Pages.
+NO reemplaces el sitio principal sin probar.
+URL de prueba: ?id=gba001
+ROM: Cloudflare R2 Assets01/12.gba
+BIOS: Cloudflare R2 System/gba_bios.bin (pública: revisa derechos de distribución).
+No incluye ROM ni BIOS. No hay audio ni guardado de partidas en esta prueba.
+No se ha podido ejecutar una prueba real en Chrome/Android aquí.
