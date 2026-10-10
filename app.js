@@ -10,7 +10,27 @@ let deferredInstall = null, objectUrl = null, loading = false;
 const overlay = () => $('loadingOverlay');
 function showLoading(text){ overlay().hidden=false; $('loadingText').textContent=text; }
 function hideLoading(){ overlay().hidden=true; }
-function showPlayer(){document.body.classList.add('playing');$('setup').style.display='none';$('playArea').style.display='block';}
+function showPlayer(){
+  document.body.classList.add('playing');
+  $('setup').style.display='none';
+  $('playArea').style.display='block';
+  // EmulatorJS calcula sus dimensiones durante la inicialización.
+  // Si el contenedor cambia de tamaño, avisamos sin exigir tocar pantalla completa.
+  requestAnimationFrame(()=>requestAnimationFrame(refreshPlayerSize));
+}
+function refreshPlayerSize(){
+  const p=$('player');
+  if(!p || !document.body.classList.contains('playing')) return;
+  p.style.width='100%';
+  p.style.height='100dvh';
+  window.dispatchEvent(new Event('resize'));
+  // Algunos cores recalculan canvas al recibir resize en su contenedor.
+  p.dispatchEvent(new Event('resize'));
+}
+function schedulePlayerRefresh(){
+  [100,350,800,1500,3000,5000,8000].forEach(ms=>setTimeout(refreshPlayerSize,ms));
+}
+
 function showSetup(message=''){document.body.classList.remove('playing');$('playArea').style.display='none';$('setup').style.display='block';hideLoading();loading=false;if(message)status(message);}
 
 const idSelect = $('id');
@@ -51,11 +71,13 @@ function launch(url,core){
   window.EJS_player='#player';window.EJS_core=core;window.EJS_gameUrl=url;
   window.EJS_pathtodata='https://cdn.emulatorjs.org/stable/data/';
   window.EJS_startOnLoaded=true;
-  window.EJS_onGameStart=()=>{hideLoading();loading=false;};
+  window.EJS_onGameStart=()=>{hideLoading();loading=false;schedulePlayerRefresh();};
   const script=document.createElement('script');
   script.src='https://cdn.emulatorjs.org/stable/data/loader.js';
   script.onerror=()=>showSetup('No se pudo descargar EmulatorJS. Revisa tu conexión.');
   $('player').append(script);
+  schedulePlayerRefresh();
+  script.addEventListener('load',schedulePlayerRefresh,{once:true});
   // EmulatorJS puede omitir el callback en algunas versiones: evitar un velo permanente.
   setTimeout(()=>{if(document.body.classList.contains('playing'))hideLoading()},9000);
 }
@@ -64,7 +86,7 @@ async function remoteStart(){
   const game=GAMES[gameId()];
   if(!game){status('Este cartucho todavía no tiene un archivo asignado en Cloudflare.');return}
   status('Comprobando juego remoto…');
-  showPlayer();showLoading('Descargando tu juego…');
+  showLoading('Descargando tu juego…');
   try{
     const response=await fetch(BASE+game.path,{method:'GET',mode:'cors',cache:'no-store'});
     if(!response.ok)throw new Error('HTTP '+response.status);
@@ -95,3 +117,6 @@ if (!configMode && GAMES[gameId()]) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', remoteStart, {once:true});
   else remoteStart();
 }
+
+window.addEventListener('orientationchange',()=>setTimeout(refreshPlayerSize,350));
+window.addEventListener('pageshow',()=>setTimeout(refreshPlayerSize,200));
