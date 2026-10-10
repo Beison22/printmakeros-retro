@@ -18,17 +18,24 @@ function showPlayer(){
   // Si el contenedor cambia de tamaño, avisamos sin exigir tocar pantalla completa.
   requestAnimationFrame(()=>requestAnimationFrame(refreshPlayerSize));
 }
-function refreshPlayerSize(){
+// Actualiza el viewport sin depender del botón de pantalla completa.
+let lastViewport = '';
+function refreshPlayerSize(force=false){
   const p=$('player');
   if(!p || !document.body.classList.contains('playing')) return;
-  p.style.width='100%';
-  p.style.height='100dvh';
-  window.dispatchEvent(new Event('resize'));
-  // Algunos cores recalculan canvas al recibir resize en su contenedor.
-  p.dispatchEvent(new Event('resize'));
+  const w=Math.max(1,Math.round(document.documentElement.clientWidth));
+  const h=Math.max(1,Math.round(window.visualViewport?.height || window.innerHeight));
+  const key=w+'x'+h;
+  p.style.width=w+'px';
+  p.style.height=h+'px';
+  $('playArea').style.height=h+'px';
+  if(force || key!==lastViewport){
+    lastViewport=key;
+    window.dispatchEvent(new Event('resize'));
+  }
 }
 function schedulePlayerRefresh(){
-  [100,350,800,1500,3000,5000,8000].forEach(ms=>setTimeout(refreshPlayerSize,ms));
+  [0,100,350,800,1500,3000,5000,8000].forEach(ms=>setTimeout(()=>refreshPlayerSize(true),ms));
 }
 
 function showSetup(message=''){document.body.classList.remove('playing');$('playArea').style.display='none';$('setup').style.display='block';hideLoading();loading=false;if(message)status(message);}
@@ -68,6 +75,7 @@ function launch(url,core){
   loading=true;
   showPlayer();showLoading('Preparando el emulador…');
   $('player').replaceChildren();
+  refreshPlayerSize(true);
   window.EJS_player='#player';window.EJS_core=core;window.EJS_gameUrl=url;
   window.EJS_pathtodata='https://cdn.emulatorjs.org/stable/data/';
   window.EJS_startOnLoaded=true;
@@ -78,8 +86,9 @@ function launch(url,core){
   $('player').append(script);
   schedulePlayerRefresh();
   script.addEventListener('load',schedulePlayerRefresh,{once:true});
-  // EmulatorJS puede omitir el callback en algunas versiones: evitar un velo permanente.
-  setTimeout(()=>{if(document.body.classList.contains('playing'))hideLoading()},9000);
+  // No ocultar el indicador por tiempo: podría revelar una pantalla blanca.
+  // Si el core no dispara onGameStart, se deja un acceso a configuración para diagnóstico.
+  setTimeout(()=>{if(loading && document.body.classList.contains('playing')) $('loadingText').textContent='El emulador sigue iniciando…';},15000);
 }
 $('start').onclick=async()=>{try{const game=await get(gameId());if(!game){status('Primero guarda un juego en este navegador.');return}if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(new Blob([game.bytes]));launch(objectUrl,game.type)}catch(e){status('Error: '+e.message)}};
 async function remoteStart(){
@@ -118,5 +127,7 @@ if (!configMode && GAMES[gameId()]) {
   else remoteStart();
 }
 
-window.addEventListener('orientationchange',()=>setTimeout(refreshPlayerSize,350));
-window.addEventListener('pageshow',()=>setTimeout(refreshPlayerSize,200));
+window.addEventListener('orientationchange',()=>setTimeout(()=>refreshPlayerSize(true),350));
+window.addEventListener('fullscreenchange',()=>setTimeout(()=>refreshPlayerSize(true),100));
+window.visualViewport?.addEventListener('resize',()=>refreshPlayerSize());
+window.addEventListener('pageshow',()=>setTimeout(()=>refreshPlayerSize(true),200));
