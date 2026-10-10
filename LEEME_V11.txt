@@ -1,0 +1,19 @@
+PRINTMAKER OS RETRO GBA v11 · MODO OFFLINE
+
+1. Haz una copia de tu repositorio GitHub actual (la versión que funciona).
+2. Descomprime y sube TODO este ZIP a la RAÍZ del repositorio, preservando las carpetas.
+3. Espera en GitHub Actions la publicación de Pages.
+4. Abre https://beison22.github.io/printmakeros-retro/?id=gba001 con INTERNET.
+5. Espera a que aparezca el juego y el indicador «Listo para jugar sin internet».
+6. En el mismo navegador y dispositivo, activa modo avión, CIERRA la pestaña y vuelve a abrir el enlace guardado o el acceso directo a la web. Comprueba que funciona.
+
+El navegador debe haber registrado el Service Worker y guardado ROM+BIOS en IndexedDB durante la primera sesión online. 
+Si el cliente borra datos del sitio, usa incógnito, o el sistema elimina almacenamiento por falta de espacio, deberá volver a descargar el juego.
+
+Cada cartucho adicional requiere una ruta .gba válida en games.json y UNA primera descarga online POR CARTUCHO.
+Solo gba001 está configurado actualmente. No guarda ROMs en GitHub.
+
+La BIOS en Cloudflare R2 público es descargable por terceros; el almacenamiento offline no es protección antipiratería ni DRM. Comprueba derechos de distribución antes de entregar a clientes.
+
+Las partidas internas (.sav) se mantienen en un IndexedDB distinto. Respaldos manuales recomendados.
+La activación de sonido todavía requiere un toque en el botón por políticas de Android.
