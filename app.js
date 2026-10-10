@@ -66,6 +66,23 @@ async function get(key) {
   });
 }
 function valid(file) { return file && /\.(gba|sfc|smc|zip)$/i.test(file.name); }
+function plausibleRom(bytes, type) {
+  // Reject empty/text/HTML error pages. This is a sanity check, not a ROM validator.
+  if (!bytes || bytes.byteLength < 32768) return false;
+  const head = new Uint8Array(bytes, 0, Math.min(256, bytes.byteLength));
+  const prefix = new TextDecoder().decode(head.slice(0, 80)).trimStart().toLowerCase();
+  if (prefix.startsWith('<!doctype') || prefix.startsWith('<html') || prefix.startsWith('<?xml') || prefix.startsWith('hola printmaker')) return false;
+  return type === 'gba' || type === 'snes';
+}
+async function removeSaved(id) {
+  const database = await db();
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction('games', 'readwrite');
+    tx.objectStore('games').delete(id);
+    tx.oncomplete = () => { database.close(); resolve(); };
+    tx.onerror = () => { database.close(); reject(tx.error); };
+  });
+}
 
 $('save').onclick = async () => {
   const file = $('rom').files[0];
@@ -75,7 +92,9 @@ $('save').onclick = async () => {
     return status('El archivo no corresponde a la consola seleccionada.');
   }
   try {
-    await put(gameId(), { name: file.name, bytes: await file.arrayBuffer(), type: isGba ? 'gba' : 'snes' });
+    const bytes = await file.arrayBuffer();
+    if (!plausibleRom(bytes, isGba ? 'gba' : 'snes')) return status('El archivo es demasiado pequeño o no parece un juego válido.');
+    await put(gameId(), { name: file.name, bytes, type: isGba ? 'gba' : 'snes' });
     status('✓ Guardado en este navegador. Pulsa Iniciar juego guardado.');
   } catch (error) { status('No se pudo guardar: ' + error.message); }
 };
@@ -107,6 +126,11 @@ async function startGame() {
     const id = gameId();
     const remote = remoteGames[id];
     let game = await get(id);
+    if (game && !plausibleRom(game.bytes, game.type)) {
+      await removeSaved(id);
+      game = null;
+      status('Se descartó un archivo local inválido; comprobando servidor…');
+    }
     if (game) {
       status('✓ Cargando juego guardado en este dispositivo…');
       await play(game);
@@ -118,7 +142,7 @@ async function startGame() {
         const response = await fetch(`${R2_BASE}/${remote.path}`, { mode: 'cors' });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const bytes = await response.arrayBuffer();
-        if (!bytes.byteLength) throw new Error('Archivo vacío');
+        if (!plausibleRom(bytes, remote.type)) throw new Error('No parece una ROM válida (podría ser texto o una página de error)');
         game = { name: remote.path.split('/').pop(), bytes, type: remote.type };
         try { await put(id, game); } catch (e) { console.warn('No se pudo guardar copia local:', e); }
         status('✓ Archivo cargado desde Cloudflare.');
@@ -134,6 +158,11 @@ async function startGame() {
   } finally { starting = false; }
 }
 $('start').onclick = startGame;
+$('testR2').onclick = testR2;
+$('clearSaved').onclick = async () => {
+  try { await removeSaved(gameId()); status('✓ Archivo local borrado para este cartucho.'); }
+  catch (error) { status('No se pudo borrar: ' + error.message); }
+};
 $('back').onclick = () => location.reload();
 $('copy').onclick = async () => {
   try { await navigator.clipboard.writeText($('url').textContent); status('✓ Enlace copiado.'); }
@@ -162,9 +191,8 @@ async function testR2() {
     status('Cloudflare R2: no se pudo comprobar la conexión (' + error.message + '). Puedes seguir usando archivos locales.');
   }
 }
-if (requestedId && remoteGames[requestedId]) {
-  // El enlace NFC intenta iniciar automáticamente el cartucho seleccionado.
-  startGame();
-} else {
-  testR2();
-}
+// Al abrir el enlace NFC se intenta iniciar el juego asignado.
+// El archivo de prueba .txt NUNCA se envía al emulador.
+if (requestedId && remoteGames[requestedId]) startGame();
+else testR2();
+
