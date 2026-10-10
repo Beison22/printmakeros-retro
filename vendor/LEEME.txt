@@ -1,0 +1,5 @@
+Coloca aquí los archivos del motor IodineGBA y una BIOS GBA legalmente utilizable.
+La integración espera que el motor exponga window.GameBoyAdvanceEmulator.
+El archivo BIOS debe llamarse gba_bios.bin (16384 bytes).
+No se incluyen ROMs, BIOS ni código de terceros en este paquete.
+Consulta el LEEME principal: este ZIP es una base de integración, NO una versión lista para jugar.

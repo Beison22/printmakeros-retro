@@ -43,10 +43,13 @@ async function boot(){
     emulator.attachGraphicsFrameHandler(graphicsSink);
     emulator.attachPlayStatusHandler(()=>{});
     emulator.attachSaveExportHandler(()=>{});
-    emulator.attachSaveImportHandler(()=>{});
+    // No registrar importador de guardados hasta implementarlo: un callback vacío
+    // deja el estado del emulador en 1 (esperando guardado) indefinidamente.
+    // Sin importador, IodineGBA pasa directamente a estado 5 (listo para ejecutar).
     emulator.attachBIOS(bios);
     emulator.attachROM(rom);
     emulator.play();
+    console.info('[PrintMaker Retro] IodineGBA estado tras iniciar:', emulator.emulatorStatus);
     timer=setInterval(()=>{try{emulator.timerCallback(performance.now());}catch(e){clearInterval(timer);console.error(e);message("Error del motor: "+e.message,true)}},16);
     setTimeout(()=>{if(!frames)message('El motor se cargó, pero aún no ha dibujado imagen. Comprueba compatibilidad del motor/BIOS.',true)},12000);
   }catch(error){console.error(error);message('No se pudo iniciar: '+error.message,true)}
