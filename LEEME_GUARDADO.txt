@@ -1,8 +1,0 @@
-PrintMaker OS Retro GBA v11.1
-
-Para guardar: usa la opcion Guardar dentro del juego GBA; luego presiona el boton Guardar de la web para respaldar ese progreso.
-Este boton NO crea un estado instantaneo de emulacion (save state).
-
-Sube app.js, index.html y sw.js a la raiz de GitHub, reemplazando archivos existentes. Conserva games.json y el motor.
-Prueba primero con internet; espera a que Github Pages publique y recarga la pagina.
-La version nueva del Service Worker invalida la cache antigua de la app, NO borra partidas guardadas.
