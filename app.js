@@ -1,5 +1,5 @@
 'use strict';
-// PrintMaker OS Retro - GBA / IodineGBA. No utiliza EmulatorJS.
+// PMOS - GBA / IodineGBA. No utiliza EmulatorJS.
 const R2 = 'https://pub-e255b156b86149298448979225186068.r2.dev/';
 const GAMES = {}; // games.json: rutas de ROM autorizadas configuradas por cartucho.
 const $ = id => document.getElementById(id);
@@ -57,7 +57,7 @@ async function isAppOfflineReady(){
   if(!('serviceWorker' in navigator))return false;
   const ready=await Promise.race([navigator.serviceWorker.ready,new Promise(resolve=>setTimeout(()=>resolve(null),4500))]);
   if(!ready?.active)return false;
-  const cache=await caches.open('printmaker-gba-v11-1');
+  const cache=await caches.open('printmaker-gba-v11-2');
   const [index,engine]=await Promise.all([cache.match('./index.html'),cache.match('./IodineGBA/core/Emulator.js')]);
   return !!(index&&engine);
 }
@@ -154,7 +154,7 @@ async function boot(){
     emulator.play();
     clearInterval(saveTimer);
     saveTimer=setInterval(()=>{flushSave().catch(console.error)},12000);
-    console.info('[PrintMaker Retro] IodineGBA estado tras iniciar:', emulator.emulatorStatus);
+    console.info('[PMOS] IodineGBA estado tras iniciar:', emulator.emulatorStatus);
     $('message').textContent='Iniciando GBA… '+emuState();
     // Sin acumular intervalos mientras el hilo principal dibuja o recibe pulsaciones.
     lastFrameTime=0;
@@ -319,7 +319,7 @@ document.getElementById('backup')?.addEventListener('click',async()=>{
     const payload={format:'PrintMaker-GBA-save-v1',cart:gameId,game:name,save:Array.from(data),type:Array.from(type||[])};
     const link=document.createElement('a');
     link.href=URL.createObjectURL(new Blob([JSON.stringify(payload)],{type:'application/json'}));
-    link.download='PrintMaker_'+gameId+'_partida.json';link.click();
+    link.download='PMOS_'+gameId+'_partida.json';link.click();
     setTimeout(()=>URL.revokeObjectURL(link.href),15000);
   }catch(err){alert(err.message)}
 });

@@ -1,6 +1,6 @@
 {
-  "name": "PrintMaker OS Retro GBA",
-  "short_name": "PrintMaker Retro",
+  "name": "PMOS",
+  "short_name": "PMOS",
   "start_url": "./?id=gba001",
   "scope": "./",
   "display": "standalone",
